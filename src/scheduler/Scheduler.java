@@ -4,16 +4,19 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.HashMap;
 
 public class Scheduler {
 	
-	ConcurrentHashMap<String, SliceStats> sliceStatsMap;
-	ConcurrentHashMap<String, SliceInfo> sliceInfoMap;
-	ConcurrentHashMap<Long, SwitchStats> switchStats;
+	//HashMap<String, SliceStats> globalSliceStatsMap;	
+	HashMap<String, SliceStats> sliceStatsMap;
+	HashMap<String, SliceInfo> sliceInfoMap;
+	HashMap<Long, SwitchStats> switchStats;
+	
+	HashMap<Long, String> switchControllerMap;  //maintains the mapping from switch to controller 
 	
 	Switches switches;
-	
+	boolean toStop;
 	
 	FlowSpaceInfo flowspaceInfo;
 	
@@ -30,29 +33,57 @@ public class Scheduler {
 	
 	public static void main(String[] args) {
 		Scheduler s = new Scheduler();
-		//s.querySliceStats("upper");
-		//s.querySliceInfo("upper");
-		s.querySwitches();
+		s.test();
+	}
+	
+	public void test() {
+		//querySliceStats("upper");
+		//querySliceInfo("upper");
+		querySwitches();
 		//System.out.println(s.switches);
-		//s.createSlice("test", "tcp:127.0.0.1:10001", null);
-		//s.removeSlice("test");
-		//s.queryFlowspcae();
-		//s.migrateFlowSpace("lower", "00:00:00:00:00:00:00:03");
-		//s.flowspaceInfo.display();
-		//s.createFlowSpace(new Long(1), "upper");
-		//s.removeFlowSpace(new Long(1));
-		//s.createFlowspaceForAll("test");;
-		//s.queryFlowspcae();
-		//s.flowspaceInfo.display();
-		s.querySwitchStats(new Long(1));
+		//createSlice("test", "tcp:127.0.0.1:10001", null);
+		//removeSlice("test");
+		//queryFlowspcae();
+		//migrateFlowSpace("lower", "00:00:00:00:00:00:00:03");
+		//flowspaceInfo.display();
+		//createFlowSpace(new Long(1), "upper");
+		//removeFlowSpace(new Long(1));
+		//createFlowspaceForAll("test");;
+		//queryFlowspcae();
+		//flowspaceInfo.display();
+		querySwitchStats(new Long(1));		
+	}
+	
+	public void run() {
+		//1.establish the info about the network, switch id, controller id,url,etc.
+		//2.periodically checks the stats of each controller, all info we need is slice stats, pass it the LP
+		//3.wait for LP to response, apply the update using flowspace update
+		//we should have known the url of all controllers at this point, thus we
+		//can create slice accordingly. And switches can be obtained by query
+		querySwitches();
+		createFlowspaceForAll(null);//this will create flowspaces for all switches, all flowspace is under slice "fvadmin"
+		
+		//TODO:create slices for all controllers, should be easy, given the url of all controllers 
+		
+		//////////////////
+		//the main schedule loop, do the 2nd,3rd things mentioned above
+		while(!toStop) {
+			
+		}
 	}
 	
 	public Scheduler() {
-		sliceStatsMap = new ConcurrentHashMap<String, SliceStats>();
-		sliceInfoMap = new ConcurrentHashMap<String, SliceInfo>();
-		switchStats = new ConcurrentHashMap<Long, SwitchStats>();
+		sliceStatsMap = new HashMap<String, SliceStats>();
+		sliceInfoMap = new HashMap<String, SliceInfo>();
+		switchStats = new HashMap<Long, SwitchStats>();
+		switchControllerMap = new HashMap<Long, String>();
 		switches = null;
 		flowspaceInfo = null;
+		toStop = false;
+	}
+	
+	public void stop() {
+		toStop = true;
 	}
 	
 	private String runCmd(String cmd) {		
@@ -163,7 +194,7 @@ public class Scheduler {
 	public boolean migrateFlowSpace(String sliceName, String dpid) {
 		//This method changes the slice-action of a slice
 		//this will delete the slice-action of current slice
-		//and ad action of another slice, thus migrating
+		//and add action of another slice, thus migrating
 		//the flowspace
 		String name = flowspaceInfo.lookUpNamebyDPID(dpid);
 		if (name == null){
@@ -176,7 +207,7 @@ public class Scheduler {
 		//two ways to update FlowSpaceInfo variable, manually or call fvctl again 
 		//for now, do it manually.
 		flowspaceInfo.changeFlowspace(sliceName, name);
-		return true;		
+		return true;
 	}
 	
 	private boolean updateFlowSpace(String sliceName, String flowspaceName) {
@@ -210,7 +241,7 @@ public class Scheduler {
 		String ret = runCmd(cmd);
 		System.out.println(ret);
 		if(!ret.startsWith("FlowSpace dpid" + dpid + " was added")) {
-			System.out.println("ERROR:" + ret);
+			System.out.println("ERROR creating flowspace:" + ret);
 			return false;
 		}
 
@@ -242,7 +273,7 @@ public class Scheduler {
 		String ret = runCmd(cmd);
 		System.out.println(ret);
 		if(!ret.equals("Flowspace entries have been removed.")) {
-			System.out.println("ERROR:" + ret);
+			System.out.println("ERROR removing Flowspace:" + ret);
 			return;
 		}
 		

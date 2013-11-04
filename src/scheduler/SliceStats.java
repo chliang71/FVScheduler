@@ -12,6 +12,16 @@ public class SliceStats {
 	SliceStatCategory tx;
 	SliceStatCategory drop;
 	
+	public void aggreate(SliceStats ss) {
+		if (!this.sliceName.equals(ss.sliceName)) {
+			System.out.println("ERROR: aggreating different slice!");
+			return;
+		}
+		this.rx.aggreate(ss.rx);
+		this.tx.aggreate(ss.tx);
+		this.drop.aggreate(ss.drop);
+	}
+	
 	public void parseFromJson(String jsonString) {
 		JsonElement jelement = new JsonParser().parse(jsonString);
 		JsonObject jobject = jelement.getAsJsonObject();
@@ -57,7 +67,26 @@ public class SliceStats {
 		int STATS_REPLY_DESC; 
 		int STATS_REQUEST_DESC;
 		int PORT_STATUS;
-
+		
+		public void aggreate(SliceStatCategory ssc) {
+			this.BARRIER_REPLY += ssc.BARRIER_REPLY;
+			this.BARRIER_REQUEST += ssc.BARRIER_REQUEST;
+			this.ECHO_REPLY += ssc.ECHO_REPLY;
+			this.ECHO_REQUEST += ssc.ECHO_REQUEST;
+			this.ERROR += ssc.ERROR;
+			this.FEATURES_REPLY += ssc.FEATURES_REPLY;
+			this.FEATURES_REQUEST += ssc.FEATURES_REQUEST;
+			this.FLOW_MOD += ssc.FLOW_MOD;
+			this.GET_CONFIG_REPLY += ssc.GET_CONFIG_REPLY;
+			this.GET_CONFIG_REQUEST += ssc.GET_CONFIG_REQUEST;
+			this.HELLO += ssc.HELLO;
+			this.PACKET_IN += ssc.PACKET_IN;
+			this.PORT_STATUS += ssc.PORT_STATUS;
+			this.SET_CONFIG += ssc.SET_CONFIG;
+			this.STATS_REPLY_DESC += ssc.STATS_REPLY_DESC;
+			this.STATS_REQUEST_DESC += ssc.STATS_REQUEST_DESC;
+		}
+		
 		@Override
 		public String toString() {
 			return this.BARRIER_REPLY +
