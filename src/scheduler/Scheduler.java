@@ -227,12 +227,16 @@ public class Scheduler {
 		return true;
 	}
 	
+	private String fsName(Long dpid) {
+		return "dpid" + dpid.toString();
+	}
+	
 	//For the following 2 method, one thing is that each switch
 	//will only have one flowspace. It is because we need exactly one
 	//controller to control all things of the switch, and in this
 	//case, one flowspace for the switch suffice
 	public boolean createFlowSpace(Long dpid, String sliceName, boolean update) {
-		String cmd = CREATE_FLOWSPACE + "dpid" + dpid.toString() //name of the fs
+		String cmd = CREATE_FLOWSPACE + fsName(dpid) //name of the fs
 				+ " " + dpid //dpid of this fs
 				+ " 1 "  //priority of this fs(all shall be 1)
 				+ " any " //match of this fs
@@ -246,10 +250,7 @@ public class Scheduler {
 		}
 
 		if(update == true) {
-			//update flowspaceInfo, calling quertFlowspace might seem expensive
-			//but I think it's find because creating flowspace should only be called
-			//when a new switch comes in, and the scheduler starts up and establishes
-			//flowspaces
+			//update flowspaceInfo, calling queryFlowspace might seem expensive
 			queryFlowspcae();
 		}
 		//update == false assumes that the update will done later
@@ -268,7 +269,7 @@ public class Scheduler {
 	}
 	
 	public void removeFlowSpace(Long dpid) {
-		String cmd = REMOVE_FLOWSPACE + "dpid" + dpid.toString();
+		String cmd = REMOVE_FLOWSPACE + fsName(dpid);
 		System.out.println(cmd);
 		String ret = runCmd(cmd);
 		System.out.println(ret);
