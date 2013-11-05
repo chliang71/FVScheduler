@@ -113,15 +113,15 @@ public class FlowSpaceInfo {
 	}
 	
 	public void createFromCmd(String string) {
-		System.out.println(string);
+		//System.out.println(string);
 		String[] substring = string.split("\n");
 		if (!substring[0].equals("Configured Flow entries:")) {
-			System.out.println("unexpected string!" + substring[0]+ "--");
+			System.err.println("unexpected string!" + substring[0]+ "--");
 			return;
 		} 
 		
 		if (substring[1].trim().equals("None")) {
-			System.out.println("Do not have any flowspace");
+			System.err.println("Do not have any flowspace");
 			return;
 		}
 		

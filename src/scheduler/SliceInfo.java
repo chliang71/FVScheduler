@@ -18,7 +18,7 @@ public class SliceInfo {
 		JsonElement jelement = new JsonParser().parse(jsonString);
 		JsonObject jobject = jelement.getAsJsonObject();
 
-		System.out.println(jobject);
+		//System.out.println(jobject);
 
 		admin_contact = jobject.get("admin-contact").getAsString();
 		admin_statue = jobject.get("admin-status").getAsString();

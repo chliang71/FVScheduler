@@ -18,7 +18,7 @@ public class Switches {
 		//System.out.println(string);
 		String[] substring = string.split("\n");
 		if (!substring[0].trim().equals("Connected switches:")) {
-			System.out.println("unexpected string!");
+			System.err.println("unexpected string!");
 			return;
 		} 
 		for (int i = 1;i<substring.length;i ++) {

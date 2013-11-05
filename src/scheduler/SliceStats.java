@@ -14,7 +14,7 @@ public class SliceStats {
 	
 	public void aggreate(SliceStats ss) {
 		if (!this.sliceName.equals(ss.sliceName)) {
-			System.out.println("ERROR: aggreating different slice!");
+			System.err.println("ERROR: aggreating different slice!");
 			return;
 		}
 		this.rx.aggreate(ss.rx);
@@ -28,15 +28,15 @@ public class SliceStats {
 		
 		JsonObject subjobject = jobject.getAsJsonObject("rx");
 		rx = parseHelper(subjobject);
-		System.out.println("rx-----------\n" + rx);
+		//System.out.println("rx-----------\n" + rx);
 		
 		subjobject = jobject.getAsJsonObject("tx");
 		tx = parseHelper(subjobject);
-		System.out.println("tx------------\n" + tx);
+		//System.out.println("tx------------\n" + tx);
 		
 		subjobject = jobject.getAsJsonObject("drop");
 		drop = parseHelper(subjobject);
-		System.out.println("drop------------\n" + drop);
+		//System.out.println("drop------------\n" + drop);
 		
 	}
 	
