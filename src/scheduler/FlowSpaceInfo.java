@@ -2,7 +2,9 @@ package scheduler;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 import com.google.gson.JsonArray;
@@ -13,17 +15,31 @@ import com.google.gson.JsonParser;
 public class FlowSpaceInfo {
 	
 	//ConcurrentHashMap<String, LinkedList<FlowSpace>> flowspaceMap;//TODO, how about change the linkedlist to a hashmap?
-	ConcurrentHashMap<String, String> flowspaceSliceMap;//key slice name, value fs name
-	ConcurrentHashMap<String, String> flowspaceNameMap;//key fs dpid, value fs name
-	ConcurrentHashMap<String, FlowSpace> flowspaceMap;//key fs name, value fs
+	HashMap<String, String> flowspaceSliceMap;//key fs name, value slice name
+	HashMap<String, String> flowspaceNameMap;//key fs dpid, value fs name
+	HashMap<String, FlowSpace> flowspaceMap;//key fs name, value fs
 	
 	public FlowSpaceInfo() {
-		flowspaceSliceMap = new ConcurrentHashMap<>();
-		flowspaceNameMap = new ConcurrentHashMap<>();
-		flowspaceMap = new ConcurrentHashMap<>();
+		flowspaceSliceMap = new HashMap<>();
+		flowspaceNameMap = new HashMap<>();
+		flowspaceMap = new HashMap<>();
 	}
 	
-	public String lookUpNamebyDPID(String dpid) {
+	public Set<String> getAllFSDPID() {
+		return flowspaceNameMap.keySet();
+	}
+	
+	public String lookupSliceByDPID(String dpid) {
+		//assume dpid is in form of "00:00....00:01"
+		String fsname = flowspaceNameMap.get(dpid);
+		return flowspaceSliceMap.get(fsname);
+	}
+	
+	public HashMap<String, String> getSwitchControllerMap() {
+		return flowspaceSliceMap;
+	}
+	
+	public String lookupNamebyDPID(String dpid) {
 		return flowspaceNameMap.get(dpid);
 	}
 	

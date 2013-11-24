@@ -5,20 +5,32 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedList;
+
+import randy.Programming;
+import randy.model.ModelInput;
+import randy.model.ModelOutput;
+
 
 public class Scheduler {
 	
 	//HashMap<String, SliceStats> globalSliceStatsMap;	
 	HashMap<String, SliceStats> sliceStatsMap;
 	HashMap<String, SliceInfo> sliceInfoMap;
-	HashMap<Long, SwitchStats> switchStats;
+	HashMap<String, SwitchStats> switchStats;
+	HashMap<String, SwitchStats> lastSwitchStats;//just a record
 	
-	HashMap<Long, String> switchControllerMap;  //maintains the mapping from switch to controller 
+	//the index for LP part
+	LinkedList<String> sliceIndex;//slice name
+	LinkedList<String> fsIndex;//dpid
+	
+	HashMap<String, String> switchControllerMap;  //maintains the mapping from switch to controller 
 	
 	Switches switches;
 	boolean toStop;
 	
 	FlowSpaceInfo flowspaceInfo;
+	ConsumptionModel cm;
 	
 	private final String SLICE_STAT_QUERY = "fvctl -f /dev/null list-slice-stats ";
 	private final String SLICE_INFO_QUERY = "fvctl -f /dev/null list-slice-info ";
@@ -30,46 +42,63 @@ public class Scheduler {
 	private final String REMOVE_FLOWSPACE = "fvctl -f /dev/null remove-flowspace ";
 	private final String UPDATE_FLOWSPACE = "fvctl -f /dev/null update-flowspace ";
 	private final String SWITCH_STATS_QUERY = "fvctl -f /dev/null list-datapath-stats ";
+	private final String ALL_SLICE_QUERY = "fvctl -f /dev/null list-slices ";
 	
 	public static void main(String[] args) {
 		Scheduler s = new Scheduler();
 		s.test();
 	}
 	
+	public Scheduler() {
+		sliceStatsMap = new HashMap<String, SliceStats>();
+		lastSwitchStats = new HashMap<String, SwitchStats>();
+		sliceInfoMap = new HashMap<String, SliceInfo>();
+		switchStats = new HashMap<String, SwitchStats>();
+		switchControllerMap = new HashMap<String, String>();
+		sliceIndex = new LinkedList<String>();
+		switches = null;
+		flowspaceInfo = null;
+		toStop = false;
+	}
 	
 	private String time() {
 		return System.currentTimeMillis()/1000 + ":" + System.currentTimeMillis()%1000;
 	}
 	
 	public void test() {
-		System.out.println("start:" + time());
-		//querySliceStats("upper");
-		//querySliceInfo("upper");
-		querySwitches();
-		//System.out.println(s.switches);
-		createSlice("test", "tcp:127.0.0.1:10001", null);
-		createSlice("test2", "tcp:127.0.0.1:10002", null);
-		System.out.println("after creating 2 slices:" + time());
-		//flowspaceInfo.display();
-		//createFlowSpace(new Long(1), "upper");
-		//removeFlowSpace(new Long(1));
-		createFlowspaceForAll("test");;
-		System.out.println("after creating 4 flowspaces:" + time());
-		try {
-			Thread.currentThread().sleep(2000);
-		} catch (InterruptedException e) {
-			e.printStackTrace();
-		}
-		System.out.println("after waiting for 2000 ms:" + time());
-		migrateFlowSpace("test2", "dpid1");
-		//queryFlowspcae();
-		//flowspaceInfo.display();
-		//querySwitchStats(new Long(1));
-		//removeSlice("test");
-		System.out.println("after migrating 1 flowspace");
-		System.out.println("done:" + time());
-		//removeSlice("test");
-		//removeSlice("test2");
+		Scheduler sched = new Scheduler();
+		sched.run();
+		//sched.queryAllSliceInfo();
+//		System.out.println("start:" + time());
+//		//querySliceStats("upper");
+//		//querySliceInfo("upper");
+//		querySwitches();
+//		System.out.println(switches);
+//		querySliceStats("first");
+//		querySliceStats("second");
+//		//createSlice("test", "tcp:127.0.0.1:10001", null);
+//		//createSlice("test2", "tcp:127.0.0.1:10002", null);
+//		//System.out.println("after creating 2 slices:" + time());
+//		//flowspaceInfo.display();
+//		//createFlowSpace(new Long(1), "upper");
+//		//removeFlowSpace(new Long(1));
+//		//createFlowspaceForAll("test");;
+//		//System.out.println("after creating 4 flowspaces:" + time());
+//		/*try {
+//			Thread.currentThread().sleep(2000);
+//		} catch (InterruptedException e) {
+//			e.printStackTrace();
+//		}*/
+//		//System.out.println("after waiting for 2000 ms:" + time());
+//		//migrateFlowSpace("test2", "dpid1");
+//		//queryFlowspcae();
+//		//flowspaceInfo.display();
+//		//querySwitchStats(new Long(1));
+//		//removeSlice("test");
+//		//System.out.println("after migrating 1 flowspace");
+//		//System.out.println("done:" + time());
+//		//removeSlice("test");
+//		//removeSlice("test2");
 	}
 	
 	public void run() {
@@ -78,30 +107,90 @@ public class Scheduler {
 		//3.wait for LP to response, apply the update using flowspace update
 		//we should have known the url of all controllers at this point, thus we
 		//can create slice accordingly. And switches can be obtained by query
+		
+		//We assume that before the scheduler starts, there already exist a bunch of flowspace
+		//and controllers, we only change them, not create them(this makes debug a little easier)
 		querySwitches();
-		createFlowspaceForAll(null);//this will create flowspaces for all switches, all flowspace is under slice "fvadmin"
+		queryFlowspcae();
+		queryAllSliceInfo();
+		cm = new StaticConsumptionModel();
+		flowspaceInfo.display();
+		System.out.println("# of controller:" + getSliceNumber());
+		System.out.println("their slice are:");
+		for(String s : sliceIndex) {
+			System.out.println(s + " ");
+		}
+		System.out.println("# of switch:" + getSwitchNumber());
+		System.out.println("their flowspace are:");
+		for(String s : fsIndex) {
+			System.out.println(s + " ");
+		}
+		//createFlowspaceForAll(null);//this will create flowspaces for all switches, all flowspace is under slice "fvadmin"
 		
 		//TODO:create slices for all controllers, should be easy, given the url of all controllers 
-		
+
+		//for now, let's assume the total number of controllers and switches are constant
+		ModelInput input = staticConfig();
 		//////////////////
 		//the main schedule loop, do the 2nd,3rd things mentioned above
 		while(!toStop) {
+			ArrayList<String> allDpid = switches.getAllDPID();
+			for(String dpid : allDpid) {
+				querySwitchStats(dpid);
+			}
+			//displaySwStats();
+			int[][] consumption = generateConsumption();
+			for (int i = 0;i<sliceIndex.size();i++) {
+				for(int j=0;j<fsIndex.size();j++) {
+					System.out.print(consumption[i][j] + " ");
+				}				
+				System.out.println();
+			}
+			input.setConsumpiton(consumption);
+			//ModelOutput output = Programming.runProgramming(input, 0);
+			ModelOutput output = new ModelOutput(null);
+			int[] assignment = output.getControllerSwitchAssignment();
+			try {
+				Thread.sleep(3000);
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
+		}
+	}
+	
+	public void displaySwStats() {
+		ArrayList<String> keys = new ArrayList<String>(switchStats.keySet());
+		for(String key : keys) {
+			System.out.println("----------->" + key);
+			System.out.println(switchStats.get(key));
 			
 		}
 	}
 	
-	public Scheduler() {
-		sliceStatsMap = new HashMap<String, SliceStats>();
-		sliceInfoMap = new HashMap<String, SliceInfo>();
-		switchStats = new HashMap<Long, SwitchStats>();
-		switchControllerMap = new HashMap<Long, String>();
-		switches = null;
-		flowspaceInfo = null;
-		toStop = false;
+	public ModelInput staticConfig() {
+		//set the parameters that are constant over time, including:
+		//# of controller
+		//# of switch
+		//latency(avg and worst)
+		//capacity of controller
+		//location number
+		//migration cost
+		ModelInput input = new ModelInput();
+		input.setControllerNumber(getSliceNumber());
+		input.setSwitchNumber(getSwitchNumber());
+		return input;
 	}
 	
 	public void stop() {
 		toStop = true;
+	}
+	
+	public int getSliceNumber() {
+		return this.sliceInfoMap.keySet().size();
+	}
+	
+	public int getSwitchNumber() {
+		return this.switches.getSwitchNumber();
 	}
 	
 	private String runCmd(String cmd) {		
@@ -155,12 +244,38 @@ public class Scheduler {
 		}
 	}
 	
+	public void queryAllSliceInfo() {
+		String cmd = ALL_SLICE_QUERY;
+		String ret = runCmd(cmd);
+		if(!ret.startsWith("Configured slices:")) {
+			System.err.println("ERROR unexpected string! " + ret);
+			return;
+		}
+		ret = ret.substring("Configured slices:".length() + 1);
+		String[] substrings = ret.split("\n");
+		for(String substring : substrings) {
+			String[] subsubstrings = substring.split("-->");
+			System.out.println(subsubstrings[0].trim() + ":" + subsubstrings[1].trim() + ";");
+			if(subsubstrings[1].trim().equals("enabled"))
+				sliceIndex.add(subsubstrings[0].trim());
+		}
+		for(String sname : sliceIndex) {
+			if(sname.equals("fvadmin"))
+				continue;
+			querySliceInfo(sname);
+		}
+	}
+	
 	public void querySliceInfo(String sliceName) {
 		String cmd = SLICE_INFO_QUERY + sliceName;
+		String redundant = "Note: No switches connected; no runtime stats available";
 		String ret = runCmd(cmd);
 		if (ret == null) {
 			System.err.print(cmd + " Execution Failed!!");
 			return;
+		}
+		if (ret.startsWith(redundant)) {
+			ret = ret.substring(redundant.length() + 1);
 		}
 		SliceInfo info = new SliceInfo();
 		info.parseFromJson(ret);
@@ -210,6 +325,8 @@ public class Scheduler {
 		}*/
 		flowspaceInfo = new FlowSpaceInfo();
 		flowspaceInfo.createFromCmd(ret);
+		switchControllerMap = flowspaceInfo.getSwitchControllerMap();
+		fsIndex = new LinkedList<String>(flowspaceInfo.getAllFSDPID());
 	}
 	
 	public boolean migrateFlowSpace(String sliceName, String flowspaceName) {
@@ -237,16 +354,12 @@ public class Scheduler {
 		return true;
 	}
 	
-	private String fsName(Long dpid) {
-		return "dpid" + dpid.toString();
-	}
-	
 	//For the following 2 method, one thing is that each switch
 	//will only have one flowspace. It is because we need exactly one
 	//controller to control all things of the switch, and in this
 	//case, one flowspace for the switch suffice
-	public boolean createFlowSpace(Long dpid, String sliceName, boolean update) {
-		String cmd = CREATE_FLOWSPACE + fsName(dpid) //name of the fs
+	public boolean createFlowSpace(String dpid, String sliceName, boolean update) {
+		String cmd = CREATE_FLOWSPACE + dpid //name of the fs
 				+ " " + dpid //dpid of this fs
 				+ " 1 "  //priority of this fs(all shall be 1)
 				+ " any " //match of this fs
@@ -257,8 +370,8 @@ public class Scheduler {
 		if(ret == null) {
 			//Sometimes happened, ret is null but the fs is still created, wonder this 
 			//is a bug of FlowVisor
-			System.err.println("NOTE return null when creating flowspace:" + fsName(dpid));		
-		} else if(!ret.startsWith("FlowSpace " + fsName(dpid) + " was added")) {
+			System.err.println("NOTE return null when creating flowspace:" + dpid);		
+		} else if(!ret.startsWith("FlowSpace " + dpid + " was added")) {
 			System.err.println("ERROR creating flowspace:" + ret + " with " + cmd);
 			return false;
 		}
@@ -275,15 +388,15 @@ public class Scheduler {
 		if(sliceName == null) {
 			sliceName = "fvadmin";
 		}
-		ArrayList<Long> dpids = switches.getAllDPID();
-		for(Long dpid : dpids) {
+		ArrayList<String> dpids = switches.getAllDPID();
+		for(String dpid : dpids) {
 			createFlowSpace(dpid, sliceName, false);
 		}
 		queryFlowspcae();
 	}
 	
 	public void removeFlowSpace(Long dpid) {
-		String cmd = REMOVE_FLOWSPACE + fsName(dpid);
+		String cmd = REMOVE_FLOWSPACE + dpid;
 		//System.out.println(cmd);
 		String ret = runCmd(cmd);
 		//System.out.println(ret);
@@ -295,12 +408,47 @@ public class Scheduler {
 		queryFlowspcae();
 	}
 	
-	public void querySwitchStats(Long dpid) {
+	public void querySwitchStats(String dpid) {
 		String cmd = SWITCH_STATS_QUERY + dpid;
 		//System.out.println(cmd);
 		String ret = runCmd(cmd);
 		SwitchStats stat = new SwitchStats();
 		stat.parseFromCmd(ret);
-		switchStats.put(dpid, stat);
+		//switchStats.put(dpid, stat);				
+		if(lastSwitchStats.containsKey(dpid)) {
+			SwitchStats last = lastSwitchStats.get(dpid);
+			SwitchStats inc = new SwitchStats();
+			//inc = stat - last
+			inc = stat.substract(last);
+			switchStats.put(dpid, inc);
+		} else {
+			switchStats.put(dpid, stat);
+		}
+		lastSwitchStats.put(dpid, stat);		
+	}
+	
+	public int[][] generateConsumption() {
+		//generate resource consumption based on current switchStats
+		int slicenum = sliceIndex.size();
+		int fsnum = fsIndex.size();
+		int[][] consumption = new int[slicenum][fsnum];
+		for(int i = 0;i<slicenum;i++) {
+			for(int j = 0;j<fsnum;j++) {
+				consumption[i][j] = 0;
+			}
+		}		
+		ArrayList<String> allDpid = new ArrayList<String>(switchStats.keySet());
+		for(String dpid : allDpid) {
+			SwitchStats ss = switchStats.get(dpid);
+			int currConsumption = ss.generateConsumption(cm);
+			
+			System.out.println("dpid:" + dpid);
+			int currSWIndex = fsIndex.indexOf(dpid);
+			String sliceName = flowspaceInfo.lookupSliceByDPID(dpid);
+			int currSliceIndex = sliceIndex.indexOf(sliceName);
+			System.out.println("slice:" + sliceName + "-->switch:" + dpid);
+			consumption[currSliceIndex][currSWIndex] = currConsumption;
+		}		
+		return consumption;		
 	}
 }

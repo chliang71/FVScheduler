@@ -4,14 +4,18 @@ import java.util.ArrayList;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class Switches {
-	private ConcurrentHashMap<Long, String> switches;
+	private ConcurrentHashMap<String, Long> switches;
 	
 	public Switches() {
-		switches = new ConcurrentHashMap<Long, String>();
+		switches = new ConcurrentHashMap<String, Long>();
 	}
 	
-	public ArrayList<Long> getAllDPID() {
-		return new ArrayList<Long>(switches.keySet());
+	public ArrayList<String> getAllDPID() {
+		return new ArrayList<String>(switches.keySet());
+	}
+	
+	public int getSwitchNumber() {
+		return switches.keySet().size();
 	}
 	
 	public void parseFromCmd(String string) {
@@ -22,15 +26,15 @@ public class Switches {
 			return;
 		} 
 		for (int i = 1;i<substring.length;i ++) {
-			String[] elements = substring[i].trim().split(":",2);
-			switches.put(Long.parseLong(elements[0].trim()), elements[1]);
+			String[] elements = substring[i].trim().split(": ",2);
+			switches.put(elements[1], Long.parseLong(elements[0].trim()));
 		}
 	}
 	
 	@Override
 	public String toString() {
 		String ret = "switches are:\n";
-		for (Long key : switches.keySet()) {
+		for (String key : switches.keySet()) {
 			ret += "dpid:" + key + " dpid:" + switches.get(key) + '\n';
 		}
 		return ret;
