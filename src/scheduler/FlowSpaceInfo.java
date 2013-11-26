@@ -16,7 +16,7 @@ public class FlowSpaceInfo {
 	
 	//ConcurrentHashMap<String, LinkedList<FlowSpace>> flowspaceMap;//TODO, how about change the linkedlist to a hashmap?
 	HashMap<String, String> flowspaceSliceMap;//key fs name, value slice name
-	HashMap<String, String> flowspaceNameMap;//key fs dpid, value fs name
+	HashMap<String, String> flowspaceNameMap;//key fs dpid, value fs name,assume dpid is in form of "00:00....00:01"
 	HashMap<String, FlowSpace> flowspaceMap;//key fs name, value fs
 	
 	public FlowSpaceInfo() {
@@ -29,8 +29,12 @@ public class FlowSpaceInfo {
 		return flowspaceNameMap.keySet();
 	}
 	
+	public String lookupFSNameByDpid(String dpid) {
+		return flowspaceNameMap.get(dpid);
+	}
+	
 	public String lookupSliceByDPID(String dpid) {
-		//assume dpid is in form of "00:00....00:01"
+		
 		String fsname = flowspaceNameMap.get(dpid);
 		return flowspaceSliceMap.get(fsname);
 	}
@@ -124,8 +128,14 @@ public class FlowSpaceInfo {
 		}
 		FlowSpace fs = srclist.remove(i);
 		addFlowspaceToSlice(dstSliceName, fs);*/
-		flowspaceSliceMap.put(fsName, dstSliceName);
-		
+		flowspaceSliceMap.put(fsName, dstSliceName);		
+	}
+	
+	public boolean confimMapping(String dstSliceName, String fsName) {
+		//if fsName already belongs to dstSliceName, return true, otherwise false
+		if(flowspaceSliceMap.containsKey(fsName) && flowspaceSliceMap.get(fsName).equals(dstSliceName)) 
+			return true;
+		return false;
 	}
 	
 	public void createFromCmd(String string) {

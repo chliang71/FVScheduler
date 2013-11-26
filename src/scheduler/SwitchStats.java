@@ -37,6 +37,8 @@ public class SwitchStats {
 		} catch (JsonSyntaxException e) {
 			System.out.println("An EOF exception is encountered" + string);
 			e.printStackTrace();
+		} catch (Exception e) {
+			e.printStackTrace();
 		}
 	}
 
