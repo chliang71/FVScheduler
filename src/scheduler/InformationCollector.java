@@ -45,17 +45,21 @@ public class InformationCollector {
 	}
 	
 	public int[][] retriveMatrix() {
+		if(matrixMap.keySet().size() == 0) {
+			return null;
+		}
 		//return the merge matrix from all channels
 		//first of all, we know that all matrixes have the 
-		//same number of lines(each fv is connected to all controllers)
-		//but the number of columns needs to be added
+		//same number of columns(each fv is connected to all controllers)
+		//but the number of rows needs to be added
 		int ncolumns = 0;
 		int nrows = 0;
 		int index = 0;
 		for(int[][] m : matrixMap.values()) {
-			ncolumns += m[0].length;
-			nrows = m.length;
-			switchNum[index] = ncolumns;
+			nrows += m.length;
+			ncolumns = m[0].length;
+			switchNum[index] = m.length;
+			System.out.println("i:" + index + " "+ m.length);
 			index ++;
 		}
 		int[][] total = new int[nrows][ncolumns];
@@ -66,11 +70,11 @@ public class InformationCollector {
 		for(int[][] m : matrixMap.values()) {
 			for(int i = 0;i<m.length;i++)
 				for(int j = 0;j<m[0].length;j++)
-					total[i][j+offset] = m[i][j];
-			offset += m[0].length;
+					total[i+offset][j] = m[i][j];
+			offset += m.length;
 		}
-		currentNumofSwitch = ncolumns;
-		currentNumofController = nrows;
+		currentNumofSwitch = nrows;
+		currentNumofController = ncolumns;
 		return total;
 	}
 	
@@ -83,6 +87,7 @@ public class InformationCollector {
 	}
 	
 	public void buildUpdate(int[] assignment) {
+		System.out.println("Update received!:" + assignment.length);
 		if(assignment.length != currentNumofSwitch) {
 			System.out.println("PANIC! Inconsistent mapping");
 			return;
@@ -96,7 +101,11 @@ public class InformationCollector {
 				remaining--;
 			}
 			String s = gson.toJson(cur);
-			updateInfo.put(index, s);
+			System.out.println("update:" + (index+1) + "-->" + s.trim());
+			synchronized (updateInfo) {
+				updateInfo.put((index+1), s.trim());
+			}
+			index ++;
 		}
 	}
 	
@@ -124,7 +133,7 @@ public class InformationCollector {
 							sc.configureBlocking( false );
 							sc.register(selector, SelectionKey.OP_READ | SelectionKey.OP_WRITE, new AtomicInteger(channelId.addAndGet(1)));
 							
-							synchronized(switchNum) {
+							synchronized(selector) {
 								if(switchNum == null) 
 									switchNum = new int[1];
 								else 
@@ -135,26 +144,39 @@ public class InformationCollector {
 						     // Read the data
 						     SocketChannel sc = (SocketChannel)key.channel();
 						     ByteBuffer buffer = ByteBuffer.allocate(1024);
-						     sc.read(buffer);
-						     buffer.flip();
-						     String s = new String(buffer.array());
 						     int id = ((AtomicInteger)key.attachment()).get();
-						     System.out.println("collector:" + s + " from " + id);
-						     buffer.clear();
-						     int[][] matrix = gson.fromJson(s, int[][].class);
-						     matrixMap.put(id, matrix);
-						     
+						     int n = sc.read(buffer);
+						     if(n == -1) {
+						    	 System.out.println("-1 got from id:" + id + " peer quited?");
+						    	 key.cancel();
+						     } else {
+						    	 buffer.flip();
+						    	 String s = new String(buffer.array());
+						    	 System.out.println("collector:" + s.trim() + "|" + n + " bytes from " + id);
+
+						    	 buffer.clear();
+						    	 int[][] matrix = gson.fromJson(s.trim(), int[][].class);
+						    	 matrixMap.put(id, matrix);
+						     }						     
 						} else if ((key.readyOps() & SelectionKey.OP_WRITE)
 							     == SelectionKey.OP_WRITE) {
 							//SocketChannel sc = (SocketChannel)key.channel();
 							//ByteBuffer buffer = ByteBuffer.wrap("Looks good".getBytes());
 						    //sc.write(buffer);	
 							int id = ((AtomicInteger)key.attachment()).get();
-							if(updateInfo.containsKey(id)) {
+							String info = null;
+							synchronized (updateInfo) {
+								if(updateInfo.containsKey(id)) {
+									info = updateInfo.get(id);
+									updateInfo.remove(id);
+								}
+							}
+							if(info != null) {
+								System.out.println("somthing to write back to id:" + id + ":" + info + "|");
+								info += " ";
 								SocketChannel sc = (SocketChannel)key.channel();
-								ByteBuffer buffer = ByteBuffer.wrap(updateInfo.get(id).getBytes());
-							    sc.write(buffer);	
-							    updateInfo.remove(id);
+								ByteBuffer buffer = ByteBuffer.wrap(info.getBytes());
+							    sc.write(buffer);								    
 							}
 						}
 					} 

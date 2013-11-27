@@ -15,11 +15,11 @@ public class SliceInfo {
 	private String slice_name;
 
 	public void parseFromJson(String jsonString) {
+		try {
 		JsonElement jelement = new JsonParser().parse(jsonString);
 		JsonObject jobject = jelement.getAsJsonObject();
 
 		//System.out.println(jobject);
-
 		admin_contact = jobject.get("admin-contact").getAsString();
 		admin_statue = jobject.get("admin-status").getAsString();
 		controller_url = jobject.get("controller-url").getAsString();
@@ -28,6 +28,10 @@ public class SliceInfo {
 		drop_policy = jobject.get("drop-policy").getAsString();
 		recv_lldp = jobject.get("recv-lldp").getAsString();
 		slice_name = jobject.get("slice-name").getAsString();
+		} catch (Exception e) {
+			System.out.println("Parsing SliceInfo failed on:" + jsonString);
+			e.printStackTrace();
+		}
 	}
 	
 	@Override

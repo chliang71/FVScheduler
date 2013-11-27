@@ -59,8 +59,8 @@ public class Scheduler {
 	private final String ALL_SLICE_QUERY = "fvctl -f /dev/null list-slices ";
 
 	public static void main(String[] args) {
-		Scheduler s = new Scheduler(true);
-		s.test();
+		Scheduler s = new Scheduler(false);
+		s.run();
 	}
 
 	public Scheduler(boolean singleNodeMode) {
@@ -75,10 +75,6 @@ public class Scheduler {
 		toStop = false;
 		currentMarshalledConsumption = "";
 		singleNode = singleNodeMode;
-	}
-
-	private String time() {
-		return System.currentTimeMillis()/1000 + ":" + System.currentTimeMillis()%1000;
 	}
 
 	public void test() {
@@ -180,23 +176,39 @@ public class Scheduler {
 					}
 					sc.read(buffer);
 					buffer.flip();
-					System.out.println("got this: " + new String(buffer.array()));	
+					String ret = new String(buffer.array());
+					ret = ret.trim();
+					String last = ret;
+					if(ret.contains(" ")) {
+						String[] sub = ret.split(" ");
+						last = sub[sub.length - 1];
+					}
+					System.out.println("got this: " + ret + "| last:" + last + "|");
+					int[] assignment = new Gson().fromJson(last, int[].class);
+					for(int i = 0;i<assignment.length;i++) {
+						System.out.print(assignment[i] + " ");
+					}
+					System.out.println();
 				} catch (Exception e) {
 					e.printStackTrace();
 				}
 			} else {
 
-				for (int i = 0;i<sliceIndex.size();i++) {
-					for(int j=0;j<fsIndex.size();j++) {
+				for (int i = 0;i<fsIndex.size();i++) {
+					for(int j=0;j<sliceIndex.size();j++) {
 						System.out.print(consumption[i][j] + " ");
 					}				
 					System.out.println();
 				}
 				input.setConsumpiton(consumption);
 				ModelOutput output = Programming.runProgramming(input, 1);
-				//				ModelOutput output = new ModelOutput(null);
-				//				int[] assignment = output.getControllerSwitchAssignment();
-				//				updateMapping(assignment);
+				if(output == null) {
+					System.out.println("LP returned:No solution found!");
+				} else {
+					System.out.println("LP returned:Attempt to update");
+					int[] assignment = output.getControllerSwitchAssignment();
+					updateMapping(assignment);
+				}
 			}
 			try {
 				Thread.sleep(3000);
@@ -215,6 +227,68 @@ public class Scheduler {
 		}
 	}
 
+	private int[][] getLatency() {
+		int rows = getSliceNumber();
+		int cols = getSwitchNumber();
+		int[][] latency = new int[getSliceNumber()][getSwitchNumber()];
+		//let's make it simple for now
+		for(int i = 0;i<rows;i++) 
+			for(int j=0;j<cols;j++)
+				latency[i][j] = i + 1;
+		return latency;
+	}
+	
+	private int getAverageLatency() {
+		int[][] latency = getLatency();
+		int sum = 0;
+		int rows = latency.length;
+		int cols = latency[0].length;
+		for(int i = 0;i<rows;i++)
+			for(int j = 0;j<cols;j++)
+				sum += latency[i][j];		
+		return sum/(rows*cols); 
+	}
+	
+	private int getWorstLatency() {
+		//let's make it simple for now
+		return getAverageLatency() + 1;
+	}
+	
+	private int[][] getCapacities() {
+		int rows = getSliceNumber();
+		int cols = getCapacitiesNumber();
+		int[][] caps = new int[getSliceNumber()][getCapacitiesNumber()];
+		//let's make it simple for now
+		for(int i = 0;i<rows;i++) {
+			for(int j = 0;j<cols;j++) {
+				caps[i][j] = 5;
+			}
+		}
+		return caps;
+	}
+	
+	private int getCapacitiesNumber() {
+		return 2; //CPU?RAM?
+	}
+	
+	private int[][] getMigrationCost() {
+		int rows = getControllerNumber();
+		int cols = getLocationNumber();
+		int[][] cost = new int[rows][cols];
+		for(int i = 0;i<rows;i++)
+			for(int j = 0;j<cols;j++)
+				cost[i][j] = i;
+		return cost;
+	}
+	
+	private int getControllerNumber() {
+		return getSliceNumber();
+	}
+	
+	private int getLocationNumber() {
+		return getSliceNumber();
+	}
+	
 	public ModelInput staticConfig() {
 		//set the parameters that are constant over time, including:
 		//# of controller
@@ -224,8 +298,17 @@ public class Scheduler {
 		//location number
 		//migration cost
 		ModelInput input = new ModelInput();
-		input.setControllerNumber(getSliceNumber());
-		input.setSwitchNumber(getSwitchNumber());
+		//for now, let's say we are free to user all controllers
+		input.setControllerNumber(getControllerNumber());
+		input.setSwitchNumber(getSwitchNumber());		
+		input.setCapacitiesNumber(getCapacitiesNumber());//CPU?RAM?
+		//these is the number of all controllers, but some of them may be idle
+		input.setLocationNumber(getLocationNumber()); 
+		input.setLatency(getLatency());		
+		input.setCapacities(getCapacities());
+		input.setMigrationCost(getMigrationCost());
+		input.setAverageLatency(getAverageLatency());
+		input.setWorstLatency(getWorstLatency());
 		return input;
 	}
 
@@ -378,8 +461,11 @@ public class Scheduler {
 	}
 
 	public boolean migrateFlowSpace(String sliceName, String flowspaceName) {
-		if(flowspaceInfo.confimMapping(sliceName, flowspaceName))
+		if(flowspaceInfo.confimMapping(sliceName, flowspaceName)) {
+			System.out.println("Updating:Already existing mapping:" + flowspaceName + "-->" + sliceName);
 			return true;//no need to do anything
+		}
+		System.out.println("Updating:Updating!" + flowspaceName + "-->" + sliceName);
 		boolean ret = updateFlowSpace(sliceName, flowspaceName);
 		if (ret == false) 
 			return false;
@@ -481,9 +567,9 @@ public class Scheduler {
 		//generate resource consumption based on current switchStats
 		int slicenum = sliceIndex.size();
 		int fsnum = fsIndex.size();
-		int[][] consumption = new int[slicenum][fsnum];
-		for(int i = 0;i<slicenum;i++) {
-			for(int j = 0;j<fsnum;j++) {
+		int[][] consumption = new int[fsnum][slicenum];
+		for(int i = 0;i<fsnum;i++) {
+			for(int j = 0;j<slicenum;j++) {
 				consumption[i][j] = 0;
 			}
 		}		
@@ -497,7 +583,7 @@ public class Scheduler {
 			String sliceName = flowspaceInfo.lookupSliceByDPID(dpid);
 			int currSliceIndex = sliceIndex.indexOf(sliceName);
 			System.out.println("slice:" + sliceName + "-->switch:" + dpid);
-			consumption[currSliceIndex][currSWIndex] = currConsumption;
+			consumption[currSWIndex][currSliceIndex] = currConsumption;
 		}		
 		return consumption;		
 	}
