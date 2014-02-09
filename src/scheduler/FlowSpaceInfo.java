@@ -18,15 +18,21 @@ public class FlowSpaceInfo {
 	HashMap<String, String> flowspaceSliceMap;//key fs name, value slice name
 	HashMap<String, String> flowspaceNameMap;//key fs dpid, value fs name,assume dpid is in form of "00:00....00:01"
 	HashMap<String, FlowSpace> flowspaceMap;//key fs name, value fs
+	HashMap<String, String> invertedFlowspaceNameMap;
 	
 	public FlowSpaceInfo() {
 		flowspaceSliceMap = new HashMap<>();
 		flowspaceNameMap = new HashMap<>();
 		flowspaceMap = new HashMap<>();
+		invertedFlowspaceNameMap = new HashMap<>();
 	}
 	
 	public Set<String> getAllFSDPID() {
 		return flowspaceNameMap.keySet();
+	}
+	
+	public String lookupDpidByFSName(String fsname) {
+		return invertedFlowspaceNameMap.get(fsname);
 	}
 	
 	public String lookupFSNameByDpid(String dpid) {
@@ -163,6 +169,7 @@ public class FlowSpaceInfo {
 			fs.name = jobject.get("name").getAsString();
 			//record the map of name and dpid
 			flowspaceNameMap.put(fs.dpid, fs.name);
+			invertedFlowspaceNameMap.put(fs.name, fs.dpid);
 			
 			fs.force_enqueue = jobject.get("force-enqueue").getAsInt();
 			fs.priority = jobject.get("priority").getAsInt();

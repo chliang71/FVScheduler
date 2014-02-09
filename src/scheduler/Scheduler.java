@@ -14,6 +14,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedList;
 
+import org.python.modules._hashlib.Hash;
+
 import com.google.gson.Gson;
 
 import randy.Programming;
@@ -29,6 +31,8 @@ public class Scheduler {
 	HashMap<String, SliceInfo> sliceInfoMap;
 	HashMap<String, SwitchStats> switchStats;
 	HashMap<String, SwitchStats> lastSwitchStats;//just a record
+	
+	HashMap<String, LinkedList<FlowInfo>> switchFlowMap; //current switch flowtable
 
 	//the index for LP part
 	LinkedList<String> sliceIndex;//slice name
@@ -45,6 +49,8 @@ public class Scheduler {
 	ConsumptionModel cm;
 
 	SocketChannel sc;
+	
+	FloodlightMeasurementManager floodlightMeasurement;
 
 	private final String SLICE_STAT_QUERY = "fvctl -f /dev/null list-slice-stats ";
 	private final String SLICE_INFO_QUERY = "fvctl -f /dev/null list-slice-info ";
@@ -57,11 +63,17 @@ public class Scheduler {
 	private final String UPDATE_FLOWSPACE = "fvctl -f /dev/null update-flowspace ";
 	private final String SWITCH_STATS_QUERY = "fvctl -f /dev/null list-datapath-stats ";
 	private final String ALL_SLICE_QUERY = "fvctl -f /dev/null list-slices ";
+	private final String ALL_SLICE_QUERY2 = "./fvctljson.py -f /dev/null list-slices ";
+	
+	private final String QUERY_FLOW_TABLE = "fvctl -f /dev/null list-datapath-flowdb ";
 
 	public static void main(String[] args) {
-		Scheduler s = new Scheduler(false);
+		Scheduler s = new Scheduler(true);
 		s.run();
+		//s.testMeasurement();
+		//s.floodlightMeasurement.readRMIConfigFromFile("/home/chen/floodlightRMIConfig");
 	}
+	
 
 	public Scheduler(boolean singleNodeMode) {
 		sliceStatsMap = new HashMap<String, SliceStats>();
@@ -75,11 +87,56 @@ public class Scheduler {
 		toStop = false;
 		currentMarshalledConsumption = "";
 		singleNode = singleNodeMode;
+		switchFlowMap = new HashMap<String, LinkedList<FlowInfo>>();
+		floodlightMeasurement = new FloodlightMeasurementManager();
 	}
 
+	public void testMeasurement() {
+		//querySwitches();
+		floodlightMeasurement.addNewRMI("localhost", 40001, "localcontroller1");
+		System.out.println("entering loop");
+		while(true) {
+			HashMap<Long, Double> fractions = floodlightMeasurement.getAllRMIFraction();
+			if(fractions == null)
+				System.out.println("Nothing returned!");
+			else {
+				for(Long swid : fractions.keySet()) {
+					System.out.println("for sw:" + swid + " its consumption is " + fractions.get(swid));
+				}
+			}
+			try {
+				Thread.sleep(10000);
+			} catch (InterruptedException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		}
+	}
+	
 	public void test() {
-		Scheduler sched = new Scheduler(true);
-		sched.run();
+		querySwitches();
+		queryFlowTableAll();
+		for(String dpid : switchFlowMap.keySet()) {
+			LinkedList<FlowInfo> infos = switchFlowMap.get(dpid);
+			for(FlowInfo info : infos) {
+				System.out.println("for:" + dpid + ":" + info);
+			}
+		}
+		ArrayList<String> dpids = 
+				new ArrayList<String>(switchFlowMap.keySet());
+		for(int i = 0;i<dpids.size() - 1;i++) {
+			String dpid1 = dpids.get(i);
+			String dpid2 = dpids.get(i + 1);
+			System.out.println("------>for " + dpid1 
+					+ " " + dpid2 
+					+ " " + compareSwitchFlowTable(dpid1, dpid2));
+		}
+		String dpidf = dpids.get(0);
+		String dpidl = dpids.get(dpids.size() - 1);
+		System.out.print("------>for " + dpidf 
+					+ " " + dpidl 
+					+ " " + compareSwitchFlowTable(dpidf, dpidl));
+		//queryFlowTable("1");
 		//sched.queryAllSliceInfo();
 		//		System.out.println("start:" + time());
 		//		//querySliceStats("upper");
@@ -126,6 +183,9 @@ public class Scheduler {
 		queryFlowspcae();
 		queryAllSliceInfo();
 		cm = new StaticConsumptionModel();
+		
+		floodlightMeasurement.readRMIConfigFromFile("/home/chen/floodlightRMIConfig");		
+		
 		flowspaceInfo.display();
 		System.out.println("# of controller:" + getSliceNumber());
 		System.out.println("their slice are:");
@@ -194,13 +254,29 @@ public class Scheduler {
 				}
 			} else {
 
-				for (int i = 0;i<fsIndex.size();i++) {
+				/*for (int i = 0;i<fsIndex.size();i++) {
 					for(int j=0;j<sliceIndex.size();j++) {
 						System.out.print(consumption[i][j] + " ");
 					}				
 					System.out.println();
+				}*/
+				/*int[][] invertedConsumption = new int[consumption[0].length][consumption.length];
+				for(int i = 0;i<consumption.length;i++)
+					for(int j = 0;j<consumption[0].length;j++)
+						invertedConsumption[j][i] = consumption[i][j];*/
+				
+				HashMap<Long, Double> fractions = floodlightMeasurement.getAllRMIFraction();
+				if(fractions == null)
+					System.out.println("Nothing returned!");
+				else {
+					System.out.println("==============>>>>");
+					for(Long swid : fractions.keySet()) {
+						System.out.println("for sw:" + swid + " its consumption is " + fractions.get(swid));
+					}
 				}
-				input.setConsumpiton(consumption);
+				
+				//input.setConsumpiton(consumption);
+				/*
 				ModelOutput output = Programming.runProgramming(input, 1);
 				if(output == null) {
 					System.out.println("LP returned:No solution found!");
@@ -208,22 +284,13 @@ public class Scheduler {
 					System.out.println("LP returned:Attempt to update");
 					int[] assignment = output.getControllerSwitchAssignment();
 					updateMapping(assignment);
-				}
+				}*/
 			}
 			try {
 				Thread.sleep(3000);
 			} catch (InterruptedException e) {
 				e.printStackTrace();
 			}
-		}
-	}
-
-	public void displaySwStats() {
-		ArrayList<String> keys = new ArrayList<String>(switchStats.keySet());
-		for(String key : keys) {
-			System.out.println("----------->" + key);
-			System.out.println(switchStats.get(key));
-
 		}
 	}
 
@@ -234,7 +301,7 @@ public class Scheduler {
 		//let's make it simple for now
 		for(int i = 0;i<rows;i++) 
 			for(int j=0;j<cols;j++)
-				latency[i][j] = i + 1;
+				latency[i][j] = 1;
 		return latency;
 	}
 	
@@ -261,7 +328,7 @@ public class Scheduler {
 		//let's make it simple for now
 		for(int i = 0;i<rows;i++) {
 			for(int j = 0;j<cols;j++) {
-				caps[i][j] = 5;
+				caps[i][j] = 25;
 			}
 		}
 		return caps;
@@ -277,7 +344,7 @@ public class Scheduler {
 		int[][] cost = new int[rows][cols];
 		for(int i = 0;i<rows;i++)
 			for(int j = 0;j<cols;j++)
-				cost[i][j] = i;
+				cost[i][j] = 1;
 		return cost;
 	}
 	
@@ -326,28 +393,33 @@ public class Scheduler {
 
 	private String runCmd(String cmd) {		
 		String ret = null;
-		try {
-			Process p = Runtime.getRuntime().exec(cmd);
-			p.waitFor();
+		do {
+			try {
+				Process p = Runtime.getRuntime().exec(cmd);
+				p.waitFor();
 
-			BufferedReader reader = 
-					new BufferedReader(new InputStreamReader(
-							p.getInputStream()));
-			String line = reader.readLine();
-			if(line != null)
-				ret = line + '\n';
-			while (line != null) {
-				line = reader.readLine();
+				BufferedReader reader = 
+						new BufferedReader(new InputStreamReader(
+								p.getInputStream()));
+				String line = reader.readLine();
 				if(line != null)
-					ret += line + '\n';
+					ret = line + '\n';
+				while (line != null) {
+					line = reader.readLine();
+					if(line != null)
+						ret += line + '\n';
+				}
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+				System.err.println(e.getMessage());
+			} catch (IOException e) {
+				e.printStackTrace();
+				System.err.println(e.getMessage());
 			}
-		} catch (InterruptedException e) {
-			e.printStackTrace();
-			System.err.println(e.getMessage());
-		} catch (IOException e) {
-			e.printStackTrace();
-			System.err.println(e.getMessage());
-		}
+			if(ret.startsWith("Could not reach a FlowVisor RPC")) {
+				System.out.println("cmd failed, try again");
+			}
+		} while(ret.startsWith("Could not reach a FlowVisor RPC"));
 		return ret;
 	}
 
@@ -374,7 +446,7 @@ public class Scheduler {
 			return false;
 		}
 	}
-
+	
 	public void queryAllSliceInfo() {
 		String cmd = ALL_SLICE_QUERY;
 		String ret = runCmd(cmd);
@@ -466,13 +538,32 @@ public class Scheduler {
 			return true;//no need to do anything
 		}
 		System.out.println("Updating:Updating!" + flowspaceName + "-->" + sliceName);
-		boolean ret = updateFlowSpace(sliceName, flowspaceName);
+		boolean ret = updateFlowSpace2(sliceName, flowspaceName);
 		if (ret == false) 
 			return false;
 		flowspaceInfo.changeFlowspace(sliceName, flowspaceName);
 		return true;
 	}
 
+	private boolean updateFlowSpace2(String sliceName, String fsName) {
+		//delete and then create
+		String cmd = REMOVE_FLOWSPACE + fsName;
+		String ret = runCmd(cmd);
+		if(ret == null) {
+			System.err.println(cmd + " Execution Failed!!");
+			return false;			
+		}
+		if(!ret.startsWith("Flowspace entries have been removed.")) {
+			System.err.println("Update failed, " + ret);
+			return false;			
+		}
+		if(!createFlowSpace(flowspaceInfo.lookupDpidByFSName(fsName), sliceName, fsName, false)) {
+			return false;
+		}
+		return true;
+	}
+	
+	@SuppressWarnings("unused")
 	private boolean updateFlowSpace(String sliceName, String flowspaceName) {
 		//only change slice-actions, =7 means that the slice has the full control 
 		// over the flowspace
@@ -494,8 +585,13 @@ public class Scheduler {
 	//will only have one flowspace. It is because we need exactly one
 	//controller to control all things of the switch, and in this
 	//case, one flowspace for the switch suffice
-	public boolean createFlowSpace(String dpid, String sliceName, boolean update) {
-		String cmd = CREATE_FLOWSPACE + dpid //name of the fs
+	public boolean createFlowSpace(String dpid, String sliceName, String fsName, boolean update) {
+		String name;
+		if(fsName ==null)
+			name = dpid;
+		else
+			name = fsName;
+		String cmd = CREATE_FLOWSPACE + name //name of the fs
 				+ " " + dpid //dpid of this fs
 				+ " 1 "  //priority of this fs(all shall be 1)
 				+ " any " //match of this fs
@@ -507,7 +603,7 @@ public class Scheduler {
 			//Sometimes happened, ret is null but the fs is still created, wonder this 
 			//is a bug of FlowVisor
 			System.err.println("NOTE return null when creating flowspace:" + dpid);		
-		} else if(!ret.startsWith("FlowSpace " + dpid + " was added")) {
+		} else if(!ret.startsWith("FlowSpace " + name + " was added")) {
 			System.err.println("ERROR creating flowspace:" + ret + " with " + cmd);
 			return false;
 		}
@@ -526,7 +622,7 @@ public class Scheduler {
 		}
 		ArrayList<String> dpids = switches.getAllDPID();
 		for(String dpid : dpids) {
-			createFlowSpace(dpid, sliceName, false);
+			createFlowSpace(dpid, sliceName, null, false);
 		}
 		queryFlowspcae();
 	}
@@ -540,7 +636,6 @@ public class Scheduler {
 			System.err.println("ERROR removing Flowspace:" + ret);
 			return;
 		}
-
 		queryFlowspcae();
 	}
 
@@ -563,6 +658,64 @@ public class Scheduler {
 		lastSwitchStats.put(dpid, stat);		
 	}
 
+	public int compareSwitchFlowTable(String dpid1, String dpid2) {
+		if(!switchFlowMap.containsKey(dpid1)) {
+			System.out.println("on info for switch:" + dpid1);
+			return 0;
+		}
+		if(!switchFlowMap.containsKey(dpid2)) {
+			System.out.println("on info for switch:" + dpid2);
+			return 0;
+		}
+		int score = 0;
+		LinkedList<FlowInfo> flowsinfos1 = switchFlowMap.get(dpid1);
+		LinkedList<FlowInfo> flowsinfos2 = switchFlowMap.get(dpid2);
+		for(FlowInfo finfo1 : flowsinfos1) {
+			for(FlowInfo finfo2 : flowsinfos2) {
+				if(finfo1.equals(finfo2))
+					score ++;
+			}
+		}
+		return score;
+	}
+	
+	public void queryFlowTableAll() {
+		ArrayList<String> dpids = switches.getAllDPID();
+		for(String dpid : dpids) {
+			System.out.println("querying:" + dpid);
+			queryFlowTable(dpid);
+		}
+	}
+	
+	public void queryFlowTable(String dpid) {
+		String cmd = QUERY_FLOW_TABLE + dpid;
+		String ret = runCmd(cmd);
+		String redundant = "Flows seen at FlowVisor:";
+
+		LinkedList<FlowInfo> allFlows;
+		if(!switchFlowMap.containsKey(dpid)) {
+			allFlows = new LinkedList<FlowInfo>();
+		} else {
+			allFlows = switchFlowMap.get(dpid);
+		}
+		
+		if(ret.startsWith(redundant)) {
+			ret = ret.substring(redundant.length() + 1);
+			ret = ret.replaceAll("u'", "\"");
+			ret = ret.replaceAll("'", "\"");
+			ret = ret.trim();
+			String[] rets = ret.split("\n");
+			for(String s : rets) {				
+				FlowInfo finfo = new FlowInfo();
+				finfo.parseFromJson(s);
+				if(!allFlows.contains(finfo))
+					allFlows.add(finfo);
+			}
+		}
+		switchFlowMap.put(dpid, allFlows);
+		System.out.println("====================>" + allFlows.size());
+	}
+	
 	public int[][] generateConsumption() {
 		//generate resource consumption based on current switchStats
 		int slicenum = sliceIndex.size();
@@ -578,11 +731,12 @@ public class Scheduler {
 			SwitchStats ss = switchStats.get(dpid);
 			int currConsumption = ss.generateConsumption(cm);
 
-			System.out.println("dpid:" + dpid);
 			int currSWIndex = fsIndex.indexOf(dpid);
 			String sliceName = flowspaceInfo.lookupSliceByDPID(dpid);
 			int currSliceIndex = sliceIndex.indexOf(sliceName);
-			System.out.println("slice:" + sliceName + "-->switch:" + dpid);
+			
+			//System.out.println("slice:" + sliceName + "-->switch:" + dpid);
+			
 			consumption[currSWIndex][currSliceIndex] = currConsumption;
 		}		
 		return consumption;		

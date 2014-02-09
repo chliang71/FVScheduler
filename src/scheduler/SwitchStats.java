@@ -43,10 +43,17 @@ public class SwitchStats {
 	}
 
 	public SwitchStats substract(SwitchStats ss) {
+		if(ss == null) {
+			System.err.println("SwitchStats input null!");
+			return this;
+		}
 		SwitchStats ssinc = new SwitchStats();
-		ssinc.drop = this.drop.substract(ss.drop);
-		ssinc.rx = this.rx.substract(ss.rx);
-		ssinc.tx = this.tx.substract(ss.tx);
+		if(ss.drop != null)
+			ssinc.drop = this.drop.substract(ss.drop);
+		if(ss.rx != null)
+			ssinc.rx = this.rx.substract(ss.rx);
+		if(ss.tx != null)
+			ssinc.tx = this.tx.substract(ss.tx);
 		ssinc.aggregate = this.aggregate.substract(ss.aggregate);
 		return ssinc;
 	}

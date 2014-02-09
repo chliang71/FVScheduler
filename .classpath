@@ -6,5 +6,6 @@
 	<classpathentry kind="lib" path="/home/chen/FVScheduler/programming.jar"/>
 	<classpathentry kind="lib" path="/home/chen/flowvisor/lib/openflow.jar"/>
 	<classpathentry kind="lib" path="/home/chen/CPLEX/cplex/lib/cplex.jar"/>
+	<classpathentry combineaccessrules="false" kind="src" path="/floodlight"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>
