@@ -11,11 +11,16 @@ import java.rmi.registry.Registry;
 import java.util.HashMap;
 import java.util.concurrent.ConcurrentHashMap;
 
+import net.floodlightcontroller.measurement.FloodlightMeasurementInfo;
 import net.floodlightcontroller.measurement.MeasurementWorker;
 
 public class FloodlightMeasurementManager {
 	
 	ConcurrentHashMap<String, MeasurementWorker> allRMIs;
+	
+	HashMap<Long, Double> currentSwitchCPUTimeFraction;
+	
+	ConcurrentHashMap<String, FloodlightMeasurementInfo> currentMeasurementInfo;
 	
 	public boolean readRMIConfigFromFile(String filename) {
 		
@@ -53,11 +58,10 @@ public class FloodlightMeasurementManager {
 		return succed;
 	}
 	
-	HashMap<Long, Double> currentSwitchCPUTimeFraction;
-	
 	public FloodlightMeasurementManager() {
 		allRMIs = new ConcurrentHashMap<String, MeasurementWorker>();
 		currentSwitchCPUTimeFraction = new HashMap<Long, Double>();
+		currentMeasurementInfo = new ConcurrentHashMap<String, FloodlightMeasurementInfo>();
 	}
 	
 	public void addNewRMI(String host, int port, String id) {
@@ -76,6 +80,25 @@ public class FloodlightMeasurementManager {
 	
 	public double getSwitchTotalCpuTimeConsumption(Long swid) {
 		return 0;
+	}
+	
+	
+	public ConcurrentHashMap<String, FloodlightMeasurementInfo> getAllRMIInfo() {
+		currentMeasurementInfo.clear();
+		for(String id : allRMIs.keySet()) {
+			MeasurementWorker server = allRMIs.get(id);
+			try {
+				FloodlightMeasurementInfo measurement = server.getInfoAndRefresh();
+				if(measurement == null) {
+					System.out.println("floodlight measurement manager:controller "+ id + " no measurement info!");
+					continue;
+				}
+				currentMeasurementInfo.put(id, measurement);
+			} catch (RemoteException e) {
+				e.printStackTrace();
+			}
+		}
+		return currentMeasurementInfo;
 	}
 	
 	public HashMap<Long, Double> getAllRMIFraction() {

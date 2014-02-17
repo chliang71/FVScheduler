@@ -14,6 +14,10 @@ public class Switches {
 		return new ArrayList<String>(switches.keySet());
 	}
 	
+	public ArrayList<Long> getAllDPIDinLong() {
+		return new ArrayList<Long>(switches.values());
+	}
+	
 	public int getSwitchNumber() {
 		return switches.keySet().size();
 	}

@@ -5,16 +5,23 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.net.Socket;
 import java.nio.ByteBuffer;
-import java.nio.channels.SelectionKey;
-import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
+import java.rmi.NotBoundException;
+import java.rmi.RemoteException;
+import java.rmi.registry.LocateRegistry;
+import java.rmi.registry.Registry;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedList;
+import java.util.concurrent.ConcurrentHashMap;
 
-import org.python.modules._hashlib.Hash;
+import net.floodlightcontroller.measurement.FloodlightMeasurementInfo;
+
+import org.flowvisor.measurement.MeasurementInfo;
+import org.flowvisor.measurement.MeasurementInfo.SwitchEntry;
+import org.flowvisor.measurement.MeasurementRMI;
+import org.openflow.protocol.OFMatch;
 
 import com.google.gson.Gson;
 
@@ -51,6 +58,11 @@ public class Scheduler {
 	SocketChannel sc;
 	
 	FloodlightMeasurementManager floodlightMeasurement;
+	FlowvisorMeasurementManager flowvisorMeasurement;
+	
+	SwitchMeasurementManager switchMeasurementManager;
+	
+	ArrayList<Long> edgeSwitches;
 
 	private final String SLICE_STAT_QUERY = "fvctl -f /dev/null list-slice-stats ";
 	private final String SLICE_INFO_QUERY = "fvctl -f /dev/null list-slice-info ";
@@ -69,13 +81,14 @@ public class Scheduler {
 
 	public static void main(String[] args) {
 		Scheduler s = new Scheduler(true);
+		//s.testFlowvisor();
 		s.run();
 		//s.testMeasurement();
 		//s.floodlightMeasurement.readRMIConfigFromFile("/home/chen/floodlightRMIConfig");
 	}
 	
-
 	public Scheduler(boolean singleNodeMode) {
+		edgeSwitches = new ArrayList<Long>();
 		sliceStatsMap = new HashMap<String, SliceStats>();
 		lastSwitchStats = new HashMap<String, SwitchStats>();
 		sliceInfoMap = new HashMap<String, SliceInfo>();
@@ -89,9 +102,75 @@ public class Scheduler {
 		singleNode = singleNodeMode;
 		switchFlowMap = new HashMap<String, LinkedList<FlowInfo>>();
 		floodlightMeasurement = new FloodlightMeasurementManager();
+		flowvisorMeasurement = new FlowvisorMeasurementManager();
+		switchMeasurementManager = new SwitchMeasurementManager();
 	}
 
+
+	public void testFlowvisor() {
+		Registry registry;
+		try {
+			registry = LocateRegistry.getRegistry("localhost", 44444);
+			MeasurementRMI server = 
+					(MeasurementRMI) registry.lookup("flowvisor_measurement");
+			
+			while(true) {
+				System.out.println("----------------------------->");
+				MeasurementInfo info = server.getCurrentMeasurementInfoAndRefresh();
+				/*System.out.println("match:" + info.getMatchTimeMap().keySet());
+				System.out.println("current:" + info.getCurrentFlowCount().keySet());
+				System.out.println("last:" + info.getLastFlowCount().keySet());*/
+				ConcurrentHashMap<OFMatch, SwitchEntry> map = info.getMatchTimeMap();
+				for(OFMatch match : map.keySet()) {
+					SwitchEntry entry = map.get(match);
+					System.out.println(match.getNetworkSource() + "--->" + match);
+					if(match.getNetworkSource() != 0 && match.getNetworkSource() != -1) {
+						// =0 is 0.0.0.0 =-1 is 255.255.255.255,can not be host!
+						// otherwise, assume it's a host and make the switch an edge
+						edgeSwitches.add(entry.getSwid());
+					} else {
+						System.out.println("seeing strange match! with net source:" + match.getNetworkSource() + ":" + match);
+					}
+				}
+				
+				for(Long swid : edgeSwitches) {
+					System.out.println("edge!----->" + swid);
+				}
+				edgeSwitches.clear();
+				Thread.sleep(5000);
+			}
+		} catch (RemoteException | NotBoundException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (InterruptedException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+	}
+	
 	public void testMeasurement() {
+		//querySwitches();
+		floodlightMeasurement.addNewRMI("localhost", 40001, "localcontroller1");
+		System.out.println("entering loop");
+		while(true) {
+			HashMap<Long, Double> fractions = floodlightMeasurement.getAllRMIFraction();
+			if(fractions == null)
+				System.out.println("Nothing returned!");
+			else {
+				for(Long swid : fractions.keySet()) {
+					System.out.println("for sw:" + swid + " its consumption is " + fractions.get(swid));
+				}
+			}
+			try {
+				Thread.sleep(10000);
+			} catch (InterruptedException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		}
+	}
+	
+	public void testMeasurement2() {
 		//querySwitches();
 		floodlightMeasurement.addNewRMI("localhost", 40001, "localcontroller1");
 		System.out.println("entering loop");
@@ -184,7 +263,8 @@ public class Scheduler {
 		queryAllSliceInfo();
 		cm = new StaticConsumptionModel();
 		
-		floodlightMeasurement.readRMIConfigFromFile("/home/chen/floodlightRMIConfig");		
+		floodlightMeasurement.readRMIConfigFromFile("/home/chen/floodlightRMIConfig");	
+		flowvisorMeasurement.initRMI("flowvisor_measurement", "localhost", 44444);
 		
 		flowspaceInfo.display();
 		System.out.println("# of controller:" + getSliceNumber());
@@ -265,7 +345,7 @@ public class Scheduler {
 					for(int j = 0;j<consumption[0].length;j++)
 						invertedConsumption[j][i] = consumption[i][j];*/
 				
-				HashMap<Long, Double> fractions = floodlightMeasurement.getAllRMIFraction();
+				/*HashMap<Long, Double> fractions = floodlightMeasurement.getAllRMIFraction();
 				if(fractions == null)
 					System.out.println("Nothing returned!");
 				else {
@@ -273,7 +353,109 @@ public class Scheduler {
 					for(Long swid : fractions.keySet()) {
 						System.out.println("for sw:" + swid + " its consumption is " + fractions.get(swid));
 					}
+				}*/
+
+				/*for(long swid : this.switches.getAllDPIDinLong()) {
+					switchMeasurementManager.addNewInfo(swid);
+				}*/
+				
+				ConcurrentHashMap<String, FloodlightMeasurementInfo> floodlightInfo = floodlightMeasurement.getAllRMIInfo();
+				if(floodlightInfo.size() == 0) {
+					System.out.println("No floodlight Info!!");
+				} else {
+					System.out.println("received info from floodlight");
+					for(String id : floodlightInfo.keySet()) {
+						FloodlightMeasurementInfo info = floodlightInfo.get(id);
+						switchMeasurementManager.addSwitchNonEventTime(id, info.getNonHandlerTime());
+						System.out.println("++++++++++++++++++++++++++non time:" + info.getNonHandlerTime());
+						HashMap<Long, Double> fraction = info.getHandlerFraction();
+						ArrayList<Long> switches = info.getAllSwitch();
+												
+						System.out.println("for controller:" + id + " faction:" + fraction.size() + " sw:" + switches + " totalNonHandler:" + info.getNonHandlerTime());
+						String s = "";
+						for(Long swid : switches) {
+							
+							switchMeasurementManager.addNewInfo(swid);
+							
+							switchMeasurementManager.addSwitchToController(id, swid);							s += swid + ":";
+							if(fraction.containsKey(swid)) {
+								s += fraction.get(swid) + " ";
+								switchMeasurementManager.addFraction(swid, fraction.get(swid));
+							} else {
+								s += "null" + " ";
+								switchMeasurementManager.addFraction(swid, 0);
+							}
+						}
+						//System.out.println(s);
+					}					
 				}
+				
+				MeasurementInfo flowvisorInfo = flowvisorMeasurement.getFlowvisorInfo();
+				edgeSwitches.clear();
+				if(flowvisorInfo == null) {
+					System.out.println("No flowvisor info!");
+				} else {
+					System.out.println("received info from flowvisor");
+					ConcurrentHashMap<OFMatch, SwitchEntry> map = flowvisorInfo.getMatchTimeMap();
+					for(OFMatch match : map.keySet()) {
+						SwitchEntry entry = map.get(match);
+						System.out.println(match.getNetworkSource() + "--->" + match);
+						if(match.getNetworkSource() != 0 && match.getNetworkSource() != -1) {
+							// =0 is 0.0.0.0 =-1 is 255.255.255.255,can not be host!
+							// otherwise, assume it's a host and make the switch an edge
+							edgeSwitches.add(entry.getSwid());
+							switchMeasurementManager.setEdge(entry.getSwid(), true);
+						} else {
+							System.out.println("seeing unexpected match! with net source:" + match.getNetworkSource() + ":" + match);
+						}
+					}
+					ConcurrentHashMap<Long, Long> flowCount = flowvisorInfo.getCurrentFlowCount();
+					for(Long swid : flowCount.keySet()) {
+						System.out.println(swid + "f count-->" + flowCount.get(swid));
+					}
+				}				
+				ConcurrentHashMap<Long, Long> currentFlowCount = flowvisorInfo.getCurrentFlowCount();
+				ConcurrentHashMap<Long, Long> lastFlowCount = flowvisorInfo.getLastFlowCount();
+				
+				//at this point, info from flowvisor and floodlight are
+				//both available, now combine them
+				for(String conid : floodlightInfo.keySet()) {
+					FloodlightMeasurementInfo coninfo = floodlightInfo.get(conid);
+					ArrayList<Long> allswitches = coninfo.getAllSwitch();
+					System.out.println("for controller===============>" + conid + " switches are:" + allswitches);
+					for(Long swid : allswitches) {
+						String s = "for swid:" + swid + ":";
+						if(!currentFlowCount.containsKey(swid)) {
+							s += "do not have current flow count info for:" + swid;
+							switchMeasurementManager.addCurrCount(swid, (long)0);
+						} else {
+							s += "current flow:" + currentFlowCount.get(swid);
+							switchMeasurementManager.addCurrCount(swid, currentFlowCount.get(swid));
+						}
+						s += "---->";
+						
+						if(!lastFlowCount.containsKey(swid)) {
+							s += "do not have last flow count info for:" + swid;
+							switchMeasurementManager.addLastCount(swid, (long)0);
+						} else {
+							s += "last flow:" + lastFlowCount.get(swid);
+							switchMeasurementManager.addLastCount(swid, lastFlowCount.get(swid));
+						}
+						s += " edge?:";
+						
+						if(edgeSwitches.contains(swid)) {
+							s += "an edge switch!";
+						} else {
+							s += "a core switch!";
+						}						
+						System.out.println(s);
+					}
+				}
+				
+				String summaryString = switchMeasurementManager.displayInfo();
+				System.out.println(summaryString);
+
+				switchMeasurementManager.constructEquationInfo();
 				
 				//input.setConsumpiton(consumption);
 				/*
